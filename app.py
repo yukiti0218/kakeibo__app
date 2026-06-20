@@ -10,6 +10,7 @@ import json
 import base64
 import httpx
 from datetime import datetime
+import traceback
 
 app = FastAPI()
 
@@ -45,90 +46,75 @@ def index():
 @app.post("/add")
 def add_entry(entry: Entry):
     sheet = get_sheet()
-    
-    # C列（3列目）のデータをすべて取得して、最初の空白行を探す
     col_c_values = sheet.col_values(3)
     
-    # 2行目からチェックを開始
     target_row = 2
     for i, val in enumerate(col_c_values[1:], start=2):
         if not val or val.strip() == "":
             target_row = i
             break
     else:
-        # 空白がなければ、現在のC列のデータ末尾の次の行
         target_row = len(col_c_values) + 1
 
-    # C列〜G列の範囲を指定
     range_name = f"C{target_row}:G{target_row}"
-    
-    # スプレッドシートのセルの並び順：C=日付, D=カテゴリ, E=メモ, F=費目, G=金額
     row_data = [entry.date, entry.category, entry.memo, entry.expense_type, entry.amount]
-    
-    # 指定したC〜G列にデータを書き込む
     sheet.update(range_name, [row_data], value_input_option="USER_ENTERED")
-    
     return {"status": "ok", "message": "記録しました"}
 
 
 @app.get("/history")
 def get_history(limit: int = 10):
-    """直近の記録（C列からG列を独自の順序で読み込み）を新しい順で返す"""
     sheet = get_sheet()
     all_values = sheet.get_all_values()
-
-    # ヘッダー行を除く
     data_rows = all_values[1:] if all_values else []
 
     rows = []
-    # 各行から「C列(インデックス2)からG列(インデックス6)」を抜き出す
     for row in data_rows:
-        # そもそもC列までデータが存在しない行はスキップ
         if len(row) <= 2:
             continue
-            
-        # C列（row[2]）が空っぽの行はデータ無しとみなしてスキップ
         if not row[2] or row[2].strip() == "":
             continue
             
-        # C列から右側のデータを切り出し、足りない列があれば空白で埋める（最大5列）
         c_to_g_data = row[2:7]
         while len(c_to_g_data) < 5:
             c_to_g_data.append("")
             
-        # 指定のセル順序（C:日付, D:カテゴリ, E:メモ, F:費目, G:金額）に合わせてマッピング
         rows.append({
-            "date":         c_to_g_data[0], # C列 (日付)
-            "category":     c_to_g_data[1], # D列 (カテゴリ)
-            "expense_type": c_to_g_data[3], # F列 (費目)
-            "amount":       c_to_g_data[4], # G列 (金額)
-            "memo":         c_to_g_data[2], # E列 (メモ)
+            "date":         c_to_g_data[0],
+            "category":     c_to_g_data[1],
+            "expense_type": c_to_g_data[3],
+            "amount":       c_to_g_data[4],
+            "memo":         c_to_g_data[2],
         })
 
-    # 有効なデータの中から、末尾からlimit件取得して新しい順に並べる
     recent = rows[-limit:][::-1]
-
     return {"rows": recent}
 
 
 @app.post("/scan")
 async def scan_receipt(file: UploadFile = File(...)):
-    """レシート画像をGeminiで解析して項目を返す"""
+    """レシートスキャンの詳細ログを出力する"""
+    print("\n====== [START SCAN] ======")
+    print(f"ファイル名: {file.filename}")
+    print(f"コンテンツタイプ: {file.content_type}")
+    
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
+        print("[ERROR] GEMINI_API_KEY が環境変数から取得できません")
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY が設定されていません")
+    else:
+        # キーの最初の4文字だけ確認用に表示
+        print(f"APIキー取得成功 (頭文字: {gemini_api_key[:4]}...)")
 
-    image_data = await file.read()
-    image_b64 = base64.b64encode(image_data).decode("utf-8")
-    mime_type = file.content_type or "image/jpeg"
+    try:
+        image_data = await file.read()
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
+        mime_type = file.content_type or "image/jpeg"
+        today = datetime.now().strftime("%Y-%m-%d")
 
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    prompt = f"""このレシート画像から家計簿の情報を抽出してください。
+        prompt = f"""このレシート画像から家計簿の情報を抽出してください。
 今日の日付は {today} です。
-
 以下のJSON形式のみで返してください。説明文は不要です。
-
 {{
   "date": "YYYY-MM-DD形式の日付（レシートに日付があればそれを使い、なければ今日の日付）",
   "category": "以下から最も適切なものを1つ選ぶ: 食費, 外食, 交通費, 光熱費, 通信費, 医療費, 日用品, 衣服, 娯楽, 教育, 保険, その他",
@@ -137,46 +123,46 @@ async def scan_receipt(file: UploadFile = File(...)):
   "memo": "店名や購入内容を簡潔に"
 }}"""
 
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt},
-                    {
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": image_b64
-                        }
-                    }
-                ]
-            }
-        ]
-    }
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt},
+                        {"inline_data": {"mime_type": mime_type, "data": image_b64}}
+                    ]
+                }
+            ]
+        }
 
-    # 正しいGemini APIのエンドポイントURL
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+        
+        print("Gemini APIへ通信を送信中...")
+        async with httpx.AsyncClient(timeout=30) as client:
+            res = await client.post(url, json=payload)
+        
+        print(f"Gemini API ステータスコード: {res.status_code}")
+        
+        if res.status_code != 200:
+            print(f"[ERROR] Gemini APIからのエラーレスポンス:\n{res.text}")
+            raise HTTPException(status_code=500, detail=f"Gemini APIエラー: {res.text}")
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        res = await client.post(url, json=payload)
-
-    if res.status_code != 200:
-        raise HTTPException(status_code=500, detail=f"Gemini APIエラー: {res.text}")
-
-    result = res.json()
-    try:
+        result = res.json()
         text = result["candidates"][0]["content"]["parts"][0]["text"]
-        # JSON部分だけ抽出
+        print(f"Geminiからの生レスポンス:\n{text}")
+
         text = text.strip().strip("```json").strip("```").strip()
         parsed = json.loads(text)
+        print("JSONパース成功！")
         return parsed
-    except (KeyError, IndexError, json.JSONDecodeError) as e:
-        raise HTTPException(status_code=500, detail=f"Geminiからのレスポンス解析に失敗しました: {str(e)}")
+
+    except Exception as e:
+        print("\n!!! [FATAL ERROR IN /scan] !!!")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"サーバー内部エラー: {str(e)}")
 
 
-# 静的ファイルの読み込み設定（これが抜けていました）
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# RenderのWebサーバー起動用設定（これが抜けていました）
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
