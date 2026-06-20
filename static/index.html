@@ -302,7 +302,6 @@
 
 <div class="container">
 
-  <!-- レシートスキャン -->
   <div class="card" id="scanCard">
     <div class="card-title">📷 レシートから自動入力</div>
     <label class="btn-scan-label" id="scanBtnLabel">
@@ -311,7 +310,6 @@
     </label>
   </div>
 
-  <!-- スキャン結果 確認・編集セクション -->
   <div id="confirmSection">
     <div class="card" style="border: 1.5px solid var(--accent); padding-bottom: 4px;">
       <div class="card-title">✏️ 内容を確認・編集してください</div>
@@ -324,7 +322,6 @@
     </div>
   </div>
 
-  <!-- 手動入力フォーム -->
   <div id="manualSection">
     <div class="card">
       <div class="card-title">基本情報</div>
@@ -374,7 +371,6 @@
     <button class="btn-submit" id="submitBtn" onclick="submitSingle()">記録する</button>
   </div>
 
-  <!-- 履歴 -->
   <div class="card">
     <div class="history-header">
       <div class="card-title" style="margin-bottom:0">最近の記録</div>
@@ -396,22 +392,25 @@
   ];
   const EXPENSE_TYPES = ["２毎月・変動費","４不定・変動費"];
 
-  // Geminiが返すカテゴリ名を選択肢にマッチさせる
+  // Geminiが返すカテゴリ名を選択肢にマッチさせるマッピング表
   const CATEGORY_MAP = {
-    "食費": "🍳内食費", "内食費": "🍳内食費",
-    "外食": "🍜外食費", "外食費": "🍜外食費",
-    "日用品": "🧻日用品",
-    "娯楽": "🎸趣味・娯楽", "趣味": "🎸趣味・娯楽",
-    "自動車": "🚙自動車", "交通費": "🚃交通費",
-    "交際費": "💍交際費",
-    "衣服": "👕衣服・美容", "美容": "👕衣服・美容",
-    "特別支出": "😲特別費", "特別費": "😲特別費",
-    "家具": "🪑家具・家電", "家電": "🪑家具・家電",
-    "旅行": "🛬旅行",
+    "内食": "🍳内食費", "🍳内食費": "🍳内食費",
+    "外食": "🍜外食費", "🍜外食費": "🍜外食費",
+    "食費": "🍳内食費",
+    "日用品": "🧻日用品", "🧻日用品": "🧻日用品",
+    "娯楽": "🎸趣味・娯楽", "趣味": "🎸趣味・娯楽", "🎸趣味・娯楽": "🎸趣味・娯楽",
+    "自動車": "🚙自動車", "🚙自動車": "🚙自動車",
+    "交通": "🚃交通費", "🚃交通費": "🚃交通費",
+    "交際": "💍交際費", "💍交際費": "💍交際費",
+    "衣服": "👕衣服・美容", "美容": "👕衣服・美容", "👕衣服・美容": "👕衣服・美容",
+    "特別": "😲特別費", "😲特別費": "😲特別費",
+    "家具": "🪑家具・家電", "家電": "🪑家具・家電", "🪑家具・家電": "🪑家具・家電",
+    "旅行": "🛬旅行", "🛬旅行": "🛬旅行",
   };
+  
   const EXPENSE_MAP = {
-    "固定費": "２毎月・変動費", "変動費": "２毎月・変動費",
-    "特別支出": "４不定・変動費", "貯蓄": "４不定・変動費",
+    "固定費": "２毎月・変動費", "変動費": "２毎月・変動費", "２毎月・変動費": "２毎月・変動費",
+    "特別支出": "４不定・変動費", "貯蓄": "４不定・変動費", "４不定・変動費": "４不定・変動費",
   };
 
   function matchCategory(raw) {
@@ -488,6 +487,16 @@
         `<option value="${t}" ${t === exp ? 'selected' : ''}>${t}</option>`
       ).join('');
 
+      // 金額から￥やカンマなどの文字列記号を完全に排除して純粋な整数にする安全ガード
+      let cleanAmount = 0;
+      if (e.amount !== undefined && e.amount !== null) {
+        if (typeof e.amount === 'string') {
+          cleanAmount = parseInt(e.amount.replace(/[^0-9]/g, '')) || 0;
+        } else {
+          cleanAmount = parseInt(e.amount) || 0;
+        }
+      }
+
       container.innerHTML += `
         <div class="confirm-card" id="entry-${i}">
           <div class="confirm-card-header">
@@ -509,7 +518,7 @@
           <div class="confirm-field">
             <label>金額</label>
             <div class="amount-wrap">
-              <input type="number" id="e-amt-${i}" value="${e.amount || 0}"
+              <input type="number" id="e-amt-${i}" value="${cleanAmount}"
                 inputmode="numeric" onchange="updateTotal()" oninput="updateTotal()" />
             </div>
           </div>
@@ -521,9 +530,8 @@
       `;
     });
 
-    // 何件あるか記録
     document.getElementById('confirmCards').dataset.count = entries.length;
-    document.getElementById('confirmSection').classList.add('show');
+    document.getElementById('confirmSection').className = 'show';
     document.getElementById('manualSection').style.display = 'none';
     updateTotal();
     document.getElementById('confirmSection').scrollIntoView({ behavior: 'smooth' });
@@ -533,7 +541,6 @@
     const card = document.getElementById(`entry-${i}`);
     if (card) card.remove();
     updateTotal();
-    // 残りが0件ならキャンセル
     if (document.querySelectorAll('.confirm-card').length === 0) cancelConfirm();
   }
 
@@ -541,14 +548,18 @@
     let total = 0;
     document.querySelectorAll('.confirm-card').forEach(card => {
       const id = card.id.replace('entry-', '');
-      const amt = parseInt(document.getElementById(`e-amt-${id}`)?.value || 0);
-      if (!isNaN(amt)) total += amt;
+      const amtInput = document.getElementById(`e-amt-${id}`);
+      if (amtInput) {
+        // ￥などが含まれないように数字部分のみパースする
+        const amt = parseInt(amtInput.value.toString().replace(/[^0-9]/g, '')) || 0;
+        total += amt;
+      }
     });
     document.getElementById('confirmTotal').textContent = '¥' + total.toLocaleString();
   }
 
   function cancelConfirm() {
-    document.getElementById('confirmSection').classList.remove('show');
+    document.getElementById('confirmSection').className = '';
     document.getElementById('manualSection').style.display = 'block';
   }
 
@@ -560,11 +571,14 @@
     const entries = [];
     for (const card of cards) {
       const id = card.id.replace('entry-', '');
+      const rawAmt = document.getElementById(`e-amt-${id}`).value;
+      const cleanAmt = parseInt(rawAmt.toString().replace(/[^0-9]/g, '')) || 0;
+
       entries.push({
         date:         document.getElementById(`e-date-${id}`).value,
         category:     document.getElementById(`e-cat-${id}`).value,
         expense_type: document.getElementById(`e-exp-${id}`).value,
-        amount:       parseInt(document.getElementById(`e-amt-${id}`).value || 0),
+        amount:       cleanAmt,
         memo:         document.getElementById(`e-memo-${id}`).value,
       });
     }
@@ -612,11 +626,13 @@
     btn.disabled = true;
     btn.textContent = '送信中…';
 
+    const cleanAmt = parseInt(amount.toString().replace(/[^0-9]/g, '')) || 0;
+
     try {
       const res = await fetch('/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, category, expense_type, amount: parseInt(amount), memo }),
+        body: JSON.stringify({ date, category, expense_type, amount: cleanAmt, memo }),
       });
       const data = await res.json();
       if (res.ok) {
