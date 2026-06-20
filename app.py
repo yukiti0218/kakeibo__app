@@ -133,7 +133,7 @@ async def scan_receipt(file: UploadFile = File(...)):
             ]
         }
 
-        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
         
         print("Gemini APIへ通信を送信中...")
         async with httpx.AsyncClient(timeout=30) as client:
