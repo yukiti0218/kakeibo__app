@@ -123,7 +123,7 @@ async def scan_receipt(file: UploadFile = File(...)):
   "memo": "店名や購入内容を簡潔に"
 }}"""
 
-        payload = {
+       payload = {
             "contents": [
                 {
                     "parts": [
@@ -134,12 +134,12 @@ async def scan_receipt(file: UploadFile = File(...)):
             ]
         }
 
-       url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+        # ここの行頭のスペースを周りと完全に揃えます（半角スペース8個分）
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+        
         print("Gemini APIへ通信を送信中...")
         async with httpx.AsyncClient(timeout=30) as client:
             res = await client.post(url, json=payload)
-        
-        print(f"Gemini API ステータスコード: {res.status_code}")
         
         if res.status_code != 200:
             print(f"[ERROR] Gemini APIからのエラーレスポンス:\n{res.text}")
