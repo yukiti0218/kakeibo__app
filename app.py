@@ -103,7 +103,6 @@ async def scan_receipt(file: UploadFile = File(...)):
         print("[ERROR] GEMINI_API_KEY が環境変数から取得できません")
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY が設定されていません")
     else:
-        # キーの最初の4文字だけ確認用に表示
         print(f"APIキー取得成功 (頭文字: {gemini_api_key[:4]}...)")
 
     try:
@@ -123,7 +122,7 @@ async def scan_receipt(file: UploadFile = File(...)):
   "memo": "店名や購入内容を簡潔に"
 }}"""
 
-       payload = {
+        payload = {
             "contents": [
                 {
                     "parts": [
@@ -134,16 +133,45 @@ async def scan_receipt(file: UploadFile = File(...)):
             ]
         }
 
-        # ここの行頭のスペースを周りと完全に揃えます（半角スペース8個分）
         url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
         
         print("Gemini APIへ通信を送信中...")
         async with httpx.AsyncClient(timeout=30) as client:
             res = await client.post(url, json=payload)
         
+        print(f"Gemini API ステータスコード: {res.status_code}")
+        
         if res.status_code != 200:
             print(f"[ERROR] Gemini APIからのエラーレスポンス:\n{res.text}")
             raise HTTPException(status_code=500, detail=f"Gemini APIエラー: {res.text}")
+
+        result = res.json()
+        text = result["candidates"][0]["content"]["parts"][0]["text"]
+        print(f"Geminiからの生レスポンス:\n{text}")
+
+        text = text.strip().strip("```json").strip("```").strip()
+        parsed = json.loads(text)
+        print("JSONパース成功！")
+        return parsed
+
+    except Exception as e:
+        print("\n!!! [FATAL ERROR IN /scan] !!!")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"サーバー内部エラー: {str(e)}")
+
+        result = res.json()
+        text = result["candidates"][0]["content"]["parts"][0]["text"]
+        print(f"Geminiからの生レスポンス:\n{text}")
+
+        text = text.strip().strip("```json").strip("```").strip()
+        parsed = json.loads(text)
+        print("JSONパース成功！")
+        return parsed
+
+    except Exception as e:
+        print("\n!!! [FATAL ERROR IN /scan] !!!")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"サーバー内部エラー: {str(e)}")
 
         result = res.json()
         text = result["candidates"][0]["content"]["parts"][0]["text"]
