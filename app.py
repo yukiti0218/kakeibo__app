@@ -45,27 +45,70 @@ def index():
 @app.post("/add")
 def add_entry(entry: Entry):
     sheet = get_sheet()
-    row_data = [entry.date, entry.category, entry.expense_type, entry.amount, entry.memo]
-    sheet.append_row(row_data, value_input_option="USER_ENTERED")
+    
+    # C列（3列目）のデータをすべて取得して、最初の空白行を探す
+    col_c_values = sheet.col_values(3)
+    
+    # 2行目からチェックを開始
+    target_row = 2
+    for i, val in enumerate(col_c_values[1:], start=2):
+        if not val or val.strip() == "":
+            target_row = i
+            break
+    else:
+        # 空白がなければ、現在のC列のデータ末尾の次の行
+        target_row = len(col_c_values) + 1
+
+    # C列〜G列の範囲を指定
+    range_name = f"C{target_row}:G{target_row}"
+    
+    # スプレッドシートのセルの並び順：C=日付, D=カテゴリ, E=メモ, F=費目, G=金額
+    row_data = [entry.date, entry.category, entry.memo, entry.expense_type, entry.amount]
+    
+    # 指定したC〜G列にデータを書き込む
+    sheet.update(range_name, [row_data], value_input_option="USER_ENTERED")
+    
     return {"status": "ok", "message": "記録しました"}
 
 
 @app.get("/history")
 def get_history(limit: int = 10):
+    """直近の記録（C列からG列を独自の順序で読み込み）を新しい順で返す"""
     sheet = get_sheet()
     all_values = sheet.get_all_values()
-    rows = all_values[-limit:] if len(all_values) > 0 else []
-    history = []
-    for row in reversed(rows):
-        if len(row) >= 4:
-            history.append({
-                "date": row[0],
-                "category": row[1],
-                "expense_type": row[2],
-                "amount": row[3],
-                "memo": row[4] if len(row) > 4 else "",
-            })
-    return {"history": history}
+
+    # ヘッダー行を除く
+    data_rows = all_values[1:] if all_values else []
+
+    rows = []
+    # 各行から「C列(インデックス2)からG列(インデックス6)」を抜き出す
+    for row in data_rows:
+        # そもそもC列までデータが存在しない行はスキップ
+        if len(row) <= 2:
+            continue
+            
+        # C列（row[2]）が空っぽの行はデータ無しとみなしてスキップ
+        if not row[2] or row[2].strip() == "":
+            continue
+            
+        # C列から右側のデータを切り出し、足りない列があれば空白で埋める（最大5列）
+        c_to_g_data = row[2:7]
+        while len(c_to_g_data) < 5:
+            c_to_g_data.append("")
+            
+        # 指定のセル順序（C:日付, D:カテゴリ, E:メモ, F:費目, G:金額）に合わせてマッピング
+        rows.append({
+            "date":         c_to_g_data[0], # C列 (日付)
+            "category":     c_to_g_data[1], # D列 (カテゴリ)
+            "expense_type": c_to_g_data[3], # F列 (費目)
+            "amount":       c_to_g_data[4], # G列 (金額)
+            "memo":         c_to_g_data[2], # E列 (メモ)
+        })
+
+    # 有効なデータの中から、末尾からlimit件取得して新しい順に並べる
+    recent = rows[-limit:][::-1]
+
+    return {"rows": recent}
 
 
 @app.post("/scan")
@@ -128,3 +171,13 @@ async def scan_receipt(file: UploadFile = File(...)):
         return parsed
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         raise HTTPException(status_code=500, detail=f"Geminiからのレスポンス解析に失敗しました: {str(e)}")
+
+
+# 静的ファイルの読み込み設定（これが抜けていました）
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# RenderのWebサーバー起動用設定（これが抜けていました）
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
