@@ -119,6 +119,25 @@
       white-space: nowrap;
       flex-shrink: 0;
     }
+
+    /* レシートスキャン専用のスタイル */
+    .btn-scan-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 12px;
+      background: var(--accent-light);
+      color: var(--accent);
+      border: 1.5px dashed var(--accent);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+    }
+    #receiptFile { display: none; }
  
     .btn-submit {
       width: 100%;
@@ -255,6 +274,14 @@
 <div class="container">
  
   <div class="card">
+    <div class="card-title">📷 レシートから自動入力</div>
+    <label class="btn-scan-label" id="scanBtnLabel">
+      <span>📄 レシート画像を選択する</span>
+      <input type="file" id="receiptFile" accept="image/*" onchange="scanReceipt(this)" />
+    </label>
+  </div>
+
+  <div class="card">
     <div class="card-title">基本情報</div>
  
     <div class="field">
@@ -269,17 +296,17 @@
       <label>カテゴリ</label>
       <select id="category">
         <option value="">選択してください</option>
-        <option>🍳内食費</option>
-        <option>🍜外食費</option>
-        <option>🧻日用品</option>
-        <option>🎸趣味・娯楽</option>
-        <option>🚙自動車</option>
-        <option>💍交際費</option>
-        <option>🚃交通費</option>
-        <option>👕衣服・美容</option>
-        <option>😲特別費</option>
-        <option>🪑家具・家電</option>
-        <option>🛬旅行</option>
+        <option value="🍳内食費">🍳内食費</option>
+        <option value="🍜外食費">🍜外食費</option>
+        <option value="🧻日用品">🧻日用品</option>
+        <option value="🎸趣味・娯楽">🎸趣味・娯楽</option>
+        <option value="🚙自動車">🚙自動車</option>
+        <option value="💍交際費">💍交際費</option>
+        <option value="🚃交通費">🚃交通費</option>
+        <option value="👕衣服・美容">👕衣服・美容</option>
+        <option value="😲特別費">😲特別費</option>
+        <option value="🪑家具・家電">🪑家具・家電</option>
+        <option value="🛬旅行">🛬旅行</option>
       </select>
     </div>
  
@@ -287,9 +314,8 @@
       <label>費目</label>
       <select id="expense_type">
         <option value="">選択してください</option>
-        <option>２毎月・変動費</option>
-        <option>４不定・変動費</option>
-
+        <option value="２毎月・変動費">２毎月・変動費</option>
+        <option value="４不定・変動費">４不定・変動費</option>
       </select>
     </div>
  
@@ -308,7 +334,6 @@
  
   <button class="btn-submit" id="submitBtn" onclick="submit()">記録する</button>
  
-  <!-- 履歴カード -->
   <div class="card">
     <div class="history-header">
       <div class="card-title" style="margin-bottom:0">最近の記録</div>
@@ -372,6 +397,65 @@
  
   fetchHistory();
  
+  // レシートスキャン用JavaScriptを追加
+  async function scanReceipt(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    
+    const label = document.getElementById('scanBtnLabel');
+    const originalText = label.innerHTML;
+    label.style.pointerEvents = 'none';
+    label.innerHTML = '<span>⏳ レシートを解析中…</span>';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/scan', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!res.ok) throw new Error('スキャンエラー');
+      const data = await res.json();
+
+      // 各入力欄にGeminiの解析結果をセット
+      if (data.date) document.getElementById('date').value = data.date;
+      if (data.amount) document.getElementById('amount').value = data.amount;
+      if (data.memo) document.getElementById('memo').value = data.memo;
+
+      // カテゴリの部分一致チェック（絵文字付きでも選べるように設定）
+      if (data.category) {
+        const catSelect = document.getElementById('category');
+        for (let opt of catSelect.options) {
+          if (opt.value.includes(data.category)) {
+            catSelect.value = opt.value;
+            break;
+          }
+        }
+      }
+
+      // 費目の部分一致チェック（２毎月・４不定などの文字列にも対応）
+      if (data.expense_type) {
+        const expSelect = document.getElementById('expense_type');
+        for (let opt of expSelect.options) {
+          if (opt.value.includes(data.expense_type)) {
+            expSelect.value = opt.value;
+            break;
+          }
+        }
+      }
+
+      showToast('✓ レシートの読み込みが完了しました');
+    } catch (e) {
+      showToast('レシートの読み込みに失敗しました', 'error');
+    } finally {
+      label.style.pointerEvents = 'auto';
+      label.innerHTML = originalText;
+      input.value = ''; // ファイルリセット
+    }
+  }
+
   async function submit() {
     const date         = document.getElementById('date').value;
     const category     = document.getElementById('category').value;
