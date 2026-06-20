@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>家計簿</title>
+  <style>
+    :root {
+      --bg: #F7F5F2;
+      --surface: #FFFFFF;
+      --border: #E0DCD6;
+      --accent: #3D6B52;
+      --accent-light: #EBF3EE;
+      --text: #1A1A1A;
+      --text-sub: #6B6560;
+      --danger: #C0392B;
+      --success: #2E7D52;
+      --radius: 12px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+ 
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+      min-height: 100vh;
+      padding-bottom: 40px;
+    }
+ 
+    header {
+      background: var(--accent);
+      color: white;
+      padding: 18px 20px 14px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+ 
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.04em; }
+    header p  { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+ 
+    .container { max-width: 480px; margin: 0 auto; padding: 16px; }
+ 
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+ 
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-sub);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+ 
+    .field { margin-bottom: 14px; }
+ 
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-sub);
+      margin-bottom: 6px;
+    }
+ 
+    input, select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 16px;
+      color: var(--text);
+      background: var(--bg);
+      appearance: none;
+      -webkit-appearance: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+ 
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: white;
+    }
+ 
+    textarea { resize: none; height: 72px; }
+ 
+    .amount-wrap { position: relative; }
+    .amount-wrap input { padding-left: 28px; }
+    .amount-wrap::before {
+      content: "¥";
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-sub);
+      font-size: 15px;
+      pointer-events: none;
+    }
+ 
+    .date-wrap { display: flex; gap: 8px; }
+    .date-wrap input { flex: 1; }
+    .btn-today {
+      padding: 0 14px;
+      background: var(--accent-light);
+      color: var(--accent);
+      border: 1.5px solid var(--accent);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+ 
+    .btn-submit {
+      width: 100%;
+      padding: 16px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: opacity 0.15s, transform 0.1s;
+      margin-bottom: 16px;
+    }
+ 
+    .btn-submit:active { opacity: 0.85; transform: scale(0.98); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+ 
+    /* 履歴 */
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+ 
+    .history-empty {
+      text-align: center;
+      color: var(--text-sub);
+      font-size: 14px;
+      padding: 20px 0;
+    }
+ 
+    .history-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+ 
+    .history-item:last-child { border-bottom: none; }
+ 
+    .history-left { flex: 1; min-width: 0; }
+ 
+    .history-date {
+      font-size: 11px;
+      color: var(--text-sub);
+      margin-bottom: 3px;
+    }
+ 
+    .history-main {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+ 
+    .history-tags {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+ 
+    .tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 100px;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 600;
+    }
+ 
+    .history-amount {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+ 
+    .history-memo {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+ 
+    .btn-reload {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+ 
+    /* トースト */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--text);
+      color: white;
+      padding: 12px 22px;
+      border-radius: 100px;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 100;
+      pointer-events: none;
+    }
+ 
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.success { background: var(--success); }
+    #toast.error   { background: var(--danger); }
+  </style>
+</head>
+<body>
+ 
+<header>
+  <h1>家計簿</h1>
+  <p>支出を記録する</p>
+</header>
+ 
+<div class="container">
+ 
+  <div class="card">
+    <div class="card-title">基本情報</div>
+ 
+    <div class="field">
+      <label>日付</label>
+      <div class="date-wrap">
+        <input type="date" id="date" />
+        <button class="btn-today" onclick="setToday()">今日</button>
+      </div>
+    </div>
+ 
+    <div class="field">
+      <label>カテゴリ</label>
+      <select id="category">
+        <option value="">選択してください</option>
+        <option>食費</option>
+        <option>外食</option>
+        <option>交通費</option>
+        <option>光熱費</option>
+        <option>通信費</option>
+        <option>医療費</option>
+        <option>日用品</option>
+        <option>衣服</option>
+        <option>娯楽</option>
+        <option>教育</option>
+        <option>保険</option>
+        <option>その他</option>
+      </select>
+    </div>
+ 
+    <div class="field">
+      <label>費目</label>
+      <select id="expense_type">
+        <option value="">選択してください</option>
+        <option>固定費</option>
+        <option>変動費</option>
+        <option>特別支出</option>
+        <option>貯蓄</option>
+      </select>
+    </div>
+ 
+    <div class="field">
+      <label>金額</label>
+      <div class="amount-wrap">
+        <input type="number" id="amount" placeholder="0" inputmode="numeric" />
+      </div>
+    </div>
+ 
+    <div class="field" style="margin-bottom:0">
+      <label>メモ</label>
+      <textarea id="memo" placeholder="任意（店名・詳細など）"></textarea>
+    </div>
+  </div>
+ 
+  <button class="btn-submit" id="submitBtn" onclick="submit()">記録する</button>
+ 
+  <!-- 履歴カード -->
+  <div class="card">
+    <div class="history-header">
+      <div class="card-title" style="margin-bottom:0">最近の記録</div>
+      <button class="btn-reload" onclick="fetchHistory()">↻ 更新</button>
+    </div>
+    <div id="historyList">
+      <div class="history-empty">読み込み中…</div>
+    </div>
+  </div>
+ 
+</div>
+ 
+<div id="toast"></div>
+ 
+<script>
+  function setToday() {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    document.getElementById('date').value = `${y}-${m}-${d}`;
+  }
+  setToday();
+ 
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `show ${type}`;
+    setTimeout(() => { t.className = ''; }, 2800);
+  }
+ 
+  async function fetchHistory() {
+    const list = document.getElementById('historyList');
+    try {
+      const res = await fetch('/history');
+      const data = await res.json();
+      const rows = data.rows;
+ 
+      if (!rows || rows.length === 0) {
+        list.innerHTML = '<div class="history-empty">まだ記録がありません</div>';
+        return;
+      }
+ 
+      list.innerHTML = rows.map(r => `
+        <div class="history-item">
+          <div class="history-left">
+            <div class="history-date">${r.date}</div>
+            <div class="history-main">${r.category}</div>
+            <div class="history-tags">
+              <span class="tag">${r.expense_type}</span>
+            </div>
+            ${r.memo ? `<div class="history-memo">${r.memo}</div>` : ''}
+          </div>
+          <div class="history-amount">¥${Number(r.amount).toLocaleString()}</div>
+        </div>
+      `).join('');
+    } catch {
+      list.innerHTML = '<div class="history-empty">履歴の取得に失敗しました</div>';
+    }
+  }
+ 
+  fetchHistory();
+ 
+  async function submit() {
+    const date         = document.getElementById('date').value;
+    const category     = document.getElementById('category').value;
+    const expense_type = document.getElementById('expense_type').value;
+    const amount       = document.getElementById('amount').value;
+    const memo         = document.getElementById('memo').value;
+ 
+    if (!date || !category || !expense_type || !amount) {
+      showToast('日付・カテゴリ・費目・金額は必須です', 'error');
+      return;
+    }
+ 
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '送信中…';
+ 
+    try {
+      const res = await fetch('/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date, category, expense_type,
+          amount: parseInt(amount),
+          memo,
+        }),
+      });
+      const data = await res.json();
+ 
+      if (res.ok) {
+        showToast('✓ 記録しました', 'success');
+        document.getElementById('category').value = '';
+        document.getElementById('expense_type').value = '';
+        document.getElementById('amount').value = '';
+        document.getElementById('memo').value = '';
+        fetchHistory();
+      } else {
+        showToast('エラー: ' + (data.detail || '不明なエラー'), 'error');
+      }
+    } catch {
+      showToast('通信エラーが発生しました', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '記録する';
+    }
+  }
+</script>
+</body>
+</html>
