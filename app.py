@@ -1,8 +1,9 @@
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import gspread
 from google.oauth2.service_account import Credentials
 import os
@@ -37,6 +38,9 @@ class Entry(BaseModel):
     amount: int
     memo: Optional[str] = ""
 
+class BulkEntries(BaseModel):
+    entries: List[Entry]
+
 
 @app.get("/")
 def index():
@@ -47,7 +51,26 @@ def index():
 def add_entry(entry: Entry):
     sheet = get_sheet()
     col_c_values = sheet.col_values(3)
-    
+    target_row = 2
+    for i, val in enumerate(col_c_values[1:], start=2):
+        if not val or val.strip() == "":
+            target_row = i
+            break
+    else:
+        target_row = len(col_c_values) + 1
+    range_name = f"C{target_row}:G{target_row}"
+    row_data = [entry.date, entry.category, entry.memo, entry.expense_type, entry.amount]
+    sheet.update(range_name, [row_data], value_input_option="USER_ENTERED")
+    return {"status": "ok", "message": "記録しました"}
+
+
+@app.post("/add_bulk")
+def add_bulk(body: BulkEntries):
+    """複数行を一括でスプレッドシートに書き込む"""
+    sheet = get_sheet()
+    col_c_values = sheet.col_values(3)
+
+    # 最初の空き行を探す
     target_row = 2
     for i, val in enumerate(col_c_values[1:], start=2):
         if not val or val.strip() == "":
@@ -56,10 +79,14 @@ def add_entry(entry: Entry):
     else:
         target_row = len(col_c_values) + 1
 
-    range_name = f"C{target_row}:G{target_row}"
-    row_data = [entry.date, entry.category, entry.memo, entry.expense_type, entry.amount]
-    sheet.update(range_name, [row_data], value_input_option="USER_ENTERED")
-    return {"status": "ok", "message": "記録しました"}
+    rows_data = []
+    for entry in body.entries:
+        rows_data.append([entry.date, entry.category, entry.memo, entry.expense_type, entry.amount])
+
+    end_row = target_row + len(rows_data) - 1
+    range_name = f"C{target_row}:G{end_row}"
+    sheet.update(range_name, rows_data, value_input_option="USER_ENTERED")
+    return {"status": "ok", "message": f"{len(rows_data)}件記録しました"}
 
 
 @app.get("/history")
@@ -67,43 +94,28 @@ def get_history(limit: int = 10):
     sheet = get_sheet()
     all_values = sheet.get_all_values()
     data_rows = all_values[1:] if all_values else []
-
     rows = []
     for row in data_rows:
-        if len(row) <= 2:
+        if len(row) <= 2 or not row[2] or row[2].strip() == "":
             continue
-        if not row[2] or row[2].strip() == "":
-            continue
-            
-        c_to_g_data = row[2:7]
-        while len(c_to_g_data) < 5:
-            c_to_g_data.append("")
-            
+        c_to_g = row[2:7]
+        while len(c_to_g) < 5:
+            c_to_g.append("")
         rows.append({
-            "date":         c_to_g_data[0],
-            "category":     c_to_g_data[1],
-            "expense_type": c_to_g_data[3],
-            "amount":       c_to_g_data[4],
-            "memo":         c_to_g_data[2],
+            "date": c_to_g[0],
+            "category": c_to_g[1],
+            "expense_type": c_to_g[3],
+            "amount": c_to_g[4],
+            "memo": c_to_g[2],
         })
-
-    recent = rows[-limit:][::-1]
-    return {"rows": recent}
+    return {"rows": rows[-limit:][::-1]}
 
 
 @app.post("/scan")
 async def scan_receipt(file: UploadFile = File(...)):
-    """レシートスキャンの詳細ログを出力する"""
-    print("\n====== [START SCAN] ======")
-    print(f"ファイル名: {file.filename}")
-    print(f"コンテンツタイプ: {file.content_type}")
-    
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
-        print("[ERROR] GEMINI_API_KEY が環境変数から取得できません")
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY が設定されていません")
-    else:
-        print(f"APIキー取得成功 (頭文字: {gemini_api_key[:4]}...)")
 
     try:
         image_data = await file.read()
@@ -113,77 +125,50 @@ async def scan_receipt(file: UploadFile = File(...)):
 
         prompt = f"""このレシート画像から家計簿の情報を抽出してください。
 今日の日付は {today} です。
-以下のJSON形式のみで返してください。説明文は不要です。
-{{
-  "date": "YYYY-MM-DD形式の日付（レシートに日付があればそれを使い、なければ今日の日付）",
-  "category": "以下から最も適切なものを1つ選ぶ: 食費, 外食, 交通費, 光熱費, 通信費, 医療費, 日用品, 衣服, 娯楽, 教育, 保険, その他",
-  "expense_type": "以下から最も適切なものを1つ選ぶ: 固定費, 変動費, 特別支出, 貯蓄",
-  "amount": 合計金額を整数で（円記号なし）,
-  "memo": "店名や購入内容を簡潔に"
-}}"""
+
+同じカテゴリの品目は合算して1行にまとめてください。
+カテゴリが複数ある場合は複数の要素を返してください。
+
+以下のJSON配列形式のみで返してください。説明文・コードブロックは不要です。
+
+[
+  {{
+    "date": "YYYY-MM-DD形式（レシートに日付があればそれ、なければ今日）",
+    "category": "以下から最も適切なものを1つ: 食費, 外食, 交通費, 光熱費, 通信費, 医療費, 日用品, 衣服, 娯楽, 教育, 保険, その他",
+    "expense_type": "以下から1つ: 固定費, 変動費, 特別支出, 貯蓄",
+    "amount": 合計金額を整数で,
+    "memo": "カテゴリの内容を簡潔に（例: 野菜・肉類）"
+  }}
+]"""
 
         payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt},
-                        {"inline_data": {"mime_type": mime_type, "data": image_b64}}
-                    ]
-                }
-            ]
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inline_data": {"mime_type": mime_type, "data": image_b64}}
+                ]
+            }]
         }
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
-        
-        print("Gemini APIへ通信を送信中...")
         async with httpx.AsyncClient(timeout=30) as client:
             res = await client.post(url, json=payload)
-        
-        print(f"Gemini API ステータスコード: {res.status_code}")
-        
+
         if res.status_code != 200:
-            print(f"[ERROR] Gemini APIからのエラーレスポンス:\n{res.text}")
             raise HTTPException(status_code=500, detail=f"Gemini APIエラー: {res.text}")
 
         result = res.json()
         text = result["candidates"][0]["content"]["parts"][0]["text"]
-        print(f"Geminiからの生レスポンス:\n{text}")
-
         text = text.strip().strip("```json").strip("```").strip()
         parsed = json.loads(text)
-        print("JSONパース成功！")
-        return parsed
+
+        # 単一オブジェクトが返ってきた場合も配列に統一
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+
+        return {"entries": parsed}
 
     except Exception as e:
-        print("\n!!! [FATAL ERROR IN /scan] !!!")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"サーバー内部エラー: {str(e)}")
-
-        result = res.json()
-        text = result["candidates"][0]["content"]["parts"][0]["text"]
-        print(f"Geminiからの生レスポンス:\n{text}")
-
-        text = text.strip().strip("```json").strip("```").strip()
-        parsed = json.loads(text)
-        print("JSONパース成功！")
-        return parsed
-
-    except Exception as e:
-        print("\n!!! [FATAL ERROR IN /scan] !!!")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"サーバー内部エラー: {str(e)}")
-
-        result = res.json()
-        text = result["candidates"][0]["content"]["parts"][0]["text"]
-        print(f"Geminiからの生レスポンス:\n{text}")
-
-        text = text.strip().strip("```json").strip("```").strip()
-        parsed = json.loads(text)
-        print("JSONパース成功！")
-        return parsed
-
-    except Exception as e:
-        print("\n!!! [FATAL ERROR IN /scan] !!!")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"サーバー内部エラー: {str(e)}")
 
@@ -193,4 +178,4 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
