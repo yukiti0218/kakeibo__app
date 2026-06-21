@@ -646,7 +646,7 @@
   }
 
   // ---- 履歴 ----
-  async function fetchHistory() {
+async function fetchHistory() {
     const list = document.getElementById('historyList');
     try {
       const res = await fetch('/history');
@@ -656,17 +656,22 @@
         list.innerHTML = '<div class="history-empty">まだ記録がありません</div>';
         return;
       }
-      list.innerHTML = rows.map(r => `
-        <div class="history-item">
-          <div class="history-left">
-            <div class="history-date">${r.date}</div>
-            <div class="history-main">${r.category}</div>
-            <div class="history-tags"><span class="tag">${r.expense_type}</span></div>
-            ${r.memo ? `<div class="history-memo">${r.memo}</div>` : ''}
+      list.innerHTML = rows.map(r => {
+        // 金額データから「¥」や「,」を綺麗に消し去ってからカンマ区切りにする
+        const cleanAmount = parseInt(r.amount.toString().replace(/[^0-9]/g, '')) || 0;
+        
+        return `
+          <div class="history-item">
+            <div class="history-left">
+              <div class="history-date">${r.date}</div>
+              <div class="history-main">${r.category}</div>
+              <div class="history-tags"><span class="tag">${r.expense_type}</span></div>
+              ${r.memo ? `<div class="history-memo">${r.memo}</div>` : ''}
+            </div>
+            <div class="history-amount">¥${cleanAmount.toLocaleString()}</div>
           </div>
-          <div class="history-amount">¥${Number(r.amount).toLocaleString()}</div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     } catch {
       list.innerHTML = '<div class="history-empty">履歴の取得に失敗しました</div>';
     }
