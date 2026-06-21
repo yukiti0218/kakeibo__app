@@ -80,18 +80,10 @@
       background: white;
     }
     textarea { resize: none; height: 64px; }
+     /* 🟢 修正後 */
     .amount-wrap { position: relative; }
-    .amount-wrap input { padding-left: 28px; }
-    .amount-wrap::before {
-      content: "¥";
-      position: absolute;
-      left: 13px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-sub);
-      font-size: 15px;
-      pointer-events: none;
-    }
+    .amount-wrap input { padding-left: 14px; } /* 左側の余白を他の入力欄と同じに戻す */
+    /* .amount-wrap::before のブロック（¥を表示する設定）を丸ごと削除 */
     .date-wrap { display: flex; gap: 8px; }
     .date-wrap input { flex: 1; }
     .btn-today {
