@@ -28,11 +28,11 @@
       padding-bottom: 40px;
     }
     
-    /* 🌐 サーバー起動待ち用の全画面ローディング */
+    /* 🌐 サーバー起動待ち用の全画面ローディング（ひよこ版） */
     #startup-loader {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
-      background: var(--bg);
+      background: #FFFDF0; /* ほんのりひよこカラーの背景 */
       z-index: 9999;
       display: flex;
       flex-direction: column;
@@ -40,28 +40,94 @@
       justify-content: center;
       transition: opacity 0.4s ease;
     }
-    .spinner {
+
+    /* 🐣 CSSで作るトコトコひよこ */
+    .chick-container {
+      position: relative;
+      width: 60px;
+      height: 60px;
+      margin-bottom: 24px;
+      animation: bounce 0.4s ease infinite alternate; /* 上下にピコピコ跳ねる */
+    }
+    .chick-body {
+      position: absolute;
       width: 50px;
       height: 50px;
-      border: 5px solid var(--border);
-      border-top-color: var(--accent);
+      background: #FFEB3B; /* 黄色い体 */
+      border-radius: 50% 50% 45% 45%;
+      top: 0; left: 5px;
+      border: 2px solid #333;
+    }
+    .chick-eye {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      background: #333;
       border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 20px;
+      top: 16px; right: 14px;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .chick-beak {
+      position: absolute;
+      width: 0; height: 0;
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+      border-left: 8px solid #FF9800; /* オレンジのくちばし */
+      top: 18px; right: -4px;
     }
+    .chick-wing {
+      position: absolute;
+      width: 14px;
+      height: 10px;
+      background: #FDD835;
+      border: 1.5px solid #333;
+      border-radius: 50%;
+      top: 24px; left: 12px;
+      transform-origin: left center;
+      animation: flap 0.2s linear infinite alternate; /* パタパタ羽ばたく */
+    }
+    .chick-leg {
+      position: absolute;
+      width: 3px; height: 10px;
+      background: #FF9800;
+      bottom: -6px;
+    }
+    .chick-leg.left {
+      left: 20px;
+      animation: walk-left 0.4s linear infinite;
+    }
+    .chick-leg.right {
+      left: 32px;
+      animation: walk-right 0.4s linear infinite;
+    }
+
+    /* 🏃‍♂️ アニメーションの設定 */
+    @keyframes bounce {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-6px); }
+    }
+    @keyframes flap {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(-20deg); }
+    }
+    @keyframes walk-left {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-4px) rotate(15deg); }
+    }
+    @keyframes walk-right {
+      0%, 100% { transform: translateY(-4px) rotate(-15deg); }
+      50% { transform: translateY(0) rotate(0deg); }
+    }
+
     .loader-text {
       font-size: 16px;
-      font-weight: 600;
-      color: var(--text);
+      font-weight: 700;
+      color: #5D534A;
       text-align: center;
       line-height: 1.6;
     }
     .loader-sub {
       font-size: 12px;
-      color: var(--text-sub);
+      color: #8C7E74;
       margin-top: 8px;
     }
 
@@ -322,9 +388,17 @@
 <body>
 
 <div id="startup-loader">
-  <div class="spinner"></div>
-  <div class="loader-text">サーバーを起動しています…<br>（初回は50秒ほどかかる場合があります）</div>
-  <div class="loader-sub">接続が完了すると自動的に画面が切り替わります。</div>
+  <div class="chick-container">
+    <div class="chick-body">
+      <div class="chick-eye"></div>
+      <div class="chick-beak"></div>
+      <div class="chick-wing"></div>
+    </div>
+    <div class="chick-leg left"></div>
+    <div class="chick-leg right"></div>
+  </div>
+  <div class="loader-text">おきあがり中…🐥</div>
+  <div class="loader-sub">サーバーが眠っているのでひよこを起こしています（約50秒）</div>
 </div>
 
 <header>
@@ -678,7 +752,7 @@
     }
   }
 
-  // 🔄 Render起動監視ロジック
+  // 🔄 Render起動監視
   async function checkServerStatus() {
     const loader = document.getElementById('startup-loader');
     while (true) {
@@ -730,7 +804,6 @@
     }
   }
 
-  // 初回起動時のチェック開始
   checkServerStatus();
 </script>
 </body>
