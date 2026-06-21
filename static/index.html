@@ -27,6 +27,44 @@
       min-height: 100vh;
       padding-bottom: 40px;
     }
+    
+    /* 🌐 サーバー起動待ち用の全画面ローディング */
+    #startup-loader {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: var(--bg);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.4s ease;
+    }
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .loader-text {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      text-align: center;
+      line-height: 1.6;
+    }
+    .loader-sub {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-top: 8px;
+    }
+
     header {
       background: var(--accent);
       color: white;
@@ -80,10 +118,9 @@
       background: white;
     }
     textarea { resize: none; height: 64px; }
-     /* 🟢 修正後 */
     .amount-wrap { position: relative; }
-    .amount-wrap input { padding-left: 14px; } /* 左側の余白を他の入力欄と同じに戻す */
-    /* .amount-wrap::before のブロック（¥を表示する設定）を丸ごと削除 */
+    .amount-wrap input { padding-left: 14px; }
+    
     .date-wrap { display: flex; gap: 8px; }
     .date-wrap input { flex: 1; }
     .btn-today {
@@ -131,7 +168,6 @@
     .btn-submit:active { opacity: 0.85; transform: scale(0.98); }
     .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* 確認カード（複数行） */
     #confirmSection { display: none; }
     #confirmSection.show { display: block; }
 
@@ -218,7 +254,6 @@
       color: var(--text);
     }
 
-    /* 履歴 */
     .history-header {
       display: flex;
       justify-content: space-between;
@@ -263,7 +298,6 @@
       padding: 4px 8px;
     }
 
-    /* トースト */
     #toast {
       position: fixed;
       bottom: 24px;
@@ -286,6 +320,12 @@
   </style>
 </head>
 <body>
+
+<div id="startup-loader">
+  <div class="spinner"></div>
+  <div class="loader-text">サーバーを起動しています…<br>（初回は50秒ほどかかる場合があります）</div>
+  <div class="loader-sub">接続が完了すると自動的に画面が切り替わります。</div>
+</div>
 
 <header>
   <h1>家計簿</h1>
@@ -384,7 +424,6 @@
   ];
   const EXPENSE_TYPES = ["２毎月・変動費","４不定・変動費"];
 
-  // Geminiが返すカテゴリ名を選択肢にマッチさせるマッピング表
   const CATEGORY_MAP = {
     "内食": "🍳内食費", "🍳内食費": "🍳内食費",
     "外食": "🍜外食費", "🍜外食費": "🍜外食費",
@@ -437,7 +476,6 @@
     setTimeout(() => { t.className = ''; }, 2800);
   }
 
-  // ---- レシートスキャン ----
   async function scanReceipt(input) {
     if (!input.files || !input.files[0]) return;
     const file = input.files[0];
@@ -463,7 +501,6 @@
     }
   }
 
-  // ---- 確認画面を表示 ----
   function showConfirm(entries) {
     const container = document.getElementById('confirmCards');
     container.innerHTML = '';
@@ -479,7 +516,6 @@
         `<option value="${t}" ${t === exp ? 'selected' : ''}>${t}</option>`
       ).join('');
 
-      // 金額から￥やカンマなどの文字列記号を完全に排除して純粋な整数にする安全ガード
       let cleanAmount = 0;
       if (e.amount !== undefined && e.amount !== null) {
         if (typeof e.amount === 'string') {
@@ -542,7 +578,6 @@
       const id = card.id.replace('entry-', '');
       const amtInput = document.getElementById(`e-amt-${id}`);
       if (amtInput) {
-        // ￥などが含まれないように数字部分のみパースする
         const amt = parseInt(amtInput.value.toString().replace(/[^0-9]/g, '')) || 0;
         total += amt;
       }
@@ -555,7 +590,6 @@
     document.getElementById('manualSection').style.display = 'block';
   }
 
-  // ---- 一括送信 ----
   async function submitBulk() {
     const cards = document.querySelectorAll('.confirm-card');
     if (cards.length === 0) return;
@@ -601,7 +635,6 @@
     }
   }
 
-  // ---- 手動送信 ----
   async function submitSingle() {
     const date         = document.getElementById('date').value;
     const category     = document.getElementById('category').value;
@@ -645,39 +678,60 @@
     }
   }
 
-  // ---- 履歴 ----
-async function fetchHistory() {
-    const list = document.getElementById('historyList');
-    try {
-      const res = await fetch('/history');
-      const data = await res.json();
-      const rows = data.rows;
-      if (!rows || rows.length === 0) {
-        list.innerHTML = '<div class="history-empty">まだ記録がありません</div>';
-        return;
+  // 🔄 Render起動監視ロジック
+  async function checkServerStatus() {
+    const loader = document.getElementById('startup-loader');
+    while (true) {
+      try {
+        const res = await fetch('/history');
+        if (res.ok) {
+          const data = await res.json();
+          renderHistory(data.rows);
+          loader.style.opacity = '0';
+          setTimeout(() => loader.remove(), 400);
+          break;
+        }
+      } catch (e) {
+        console.log("サーバーの起動を待っています...");
       }
-      list.innerHTML = rows.map(r => {
-        // 金額データから「¥」や「,」を綺麗に消し去ってからカンマ区切りにする
-        const cleanAmount = parseInt(r.amount.toString().replace(/[^0-9]/g, '')) || 0;
-        
-        return `
-          <div class="history-item">
-            <div class="history-left">
-              <div class="history-date">${r.date}</div>
-              <div class="history-main">${r.category}</div>
-              <div class="history-tags"><span class="tag">${r.expense_type}</span></div>
-              ${r.memo ? `<div class="history-memo">${r.memo}</div>` : ''}
-            </div>
-            <div class="history-amount">¥${cleanAmount.toLocaleString()}</div>
-          </div>
-        `;
-      }).join('');
-    } catch {
-      list.innerHTML = '<div class="history-empty">履歴の取得に失敗しました</div>';
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
   }
 
-  fetchHistory();
+  function renderHistory(rows) {
+    const list = document.getElementById('historyList');
+    if (!rows || rows.length === 0) {
+      list.innerHTML = '<div class="history-empty">まだ記録がありません</div>';
+      return;
+    }
+    list.innerHTML = rows.map(r => {
+      const cleanAmount = parseInt(r.amount.toString().replace(/[^0-9]/g, '')) || 0;
+      return `
+        <div class="history-item">
+          <div class="history-left">
+            <div class="history-date">${r.date}</div>
+            <div class="history-main">${r.category}</div>
+            <div class="history-tags"><span class="tag">${r.expense_type}</span></div>
+            ${r.memo ? `<div class="history-memo">${r.memo}</div>` : ''}
+          </div>
+          <div class="history-amount">¥${cleanAmount.toLocaleString()}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function fetchHistory() {
+    try {
+      const res = await fetch('/history');
+      const data = await res.json();
+      renderHistory(data.rows);
+    } catch {
+      document.getElementById('historyList').innerHTML = '<div class="history-empty">履歴の取得に失敗しました</div>';
+    }
+  }
+
+  // 初回起動時のチェック開始
+  checkServerStatus();
 </script>
 </body>
 </html>
